@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SOC Agent - Dashboard</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i data-lucide="shield" class="logo-icon"></i>
+                    <div>
+                        <h2>AI SOC Agent</h2>
+                        <span class="subtitle">Intelligent SOC</span>
+                    </div>
+                </div>
+                <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('active')">
+                    <i data-lucide="menu"></i>
+                </button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="index.html" class="nav-item active"><i data-lucide="layout-dashboard"></i> Overview</a>
+                <a href="alerts.html" class="nav-item"><i data-lucide="alert-triangle"></i> Security Alerts</a>
+                <a href="investigations.html" class="nav-item"><i data-lucide="search"></i> AI Investigations</a>
+                <a href="memory.html" class="nav-item"><i data-lucide="brain"></i> Incident Memory</a>
+                <a href="settings.html" class="nav-item"><i data-lucide="settings"></i> Settings</a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <div class="status-dot" id="backend-dot"></div>
+                    <span id="backend-status-text">Connecting...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <header class="top-header">
+                <div>
+                    <h1>Overview Dashboard</h1>
+                    <p class="text-muted" id="current-date"></p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="btn-refresh"><i data-lucide="refresh-cw"></i> Refresh</button>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                <!-- Summary Cards -->
+                <div class="card summary-card">
+                    <div class="card-title">Total Alerts</div>
+                    <div class="card-value" id="count-total-alerts">-</div>
+                </div>
+                <div class="card summary-card">
+                    <div class="card-title">High Severity</div>
+                    <div class="card-value" id="count-high-alerts">-</div>
+                </div>
+                <div class="card summary-card">
+                    <div class="card-title">Investigations</div>
+                    <div class="card-value" id="count-investigations">-</div>
+                </div>
+                <div class="card summary-card">
+                    <div class="card-title">Hindsight Memory</div>
+                    <div class="card-value" id="count-memory">Active</div>
+                </div>
+                
+                <!-- Charts -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; grid-column: 1 / -1;">
+                    <div class="card chart-card">
+                        <h3>Severity Distribution</h3>
+                        <div style="height: 200px; display: flex; justify-content: center; align-items: center; margin-top: 1rem;">
+                            <canvas id="severityChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card chart-card">
+                        <h3>Live Network Traffic (ML)</h3>
+                        <div style="height: 200px; display: flex; justify-content: center; align-items: center; margin-top: 1rem;">
+                            <canvas id="networkChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Alerts Table -->
+                <div class="card table-card" style="grid-column: 1 / -1;">
+                    <h3>Recent Security Alerts</h3>
+                    <div class="table-responsive">
+                        <table id="recent-alerts-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Type</th>
+                                    <th>Source IP</th>
+                                    <th>Severity</th>
+                                    <th>Description</th>
+                                    <th>Recommended Action</th>
+                                    <th>Detected At</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="alerts-tbody">
+                                <!-- Populated dynamically by JS -->
+                            </tbody>
+                        </table>
+                        <div id="alerts-empty-state" style="display: none; text-align: center; padding: 2rem;" class="text-muted">
+                            No alerts detected yet.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Network Packet Inspection (ML Module) -->
+                <div class="card table-card" style="grid-column: 1 / -1; margin-top: 1rem; border-color: var(--accent-primary);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="color: var(--accent-primary); display: flex; align-items: center; gap: 8px;">
+                            <i data-lucide="activity"></i> Live Network Packet Inspection (ML)
+                        </h3>
+                        <div>
+                            <button class="btn btn-secondary" id="btn-simulate-packet" style="font-size: 0.75rem; border-color: var(--accent-primary); color: var(--accent-primary); margin-right: 10px;">
+                                <i data-lucide="zap"></i> Sniff Live Packet
+                            </button>
+                            <button class="btn btn-primary" id="btn-simulate-attack" style="font-size: 0.75rem; background-color: var(--accent-critical); border-color: var(--accent-critical);">
+                                <i data-lucide="crosshair"></i> Inject Attack (Test)
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="network-table" class="network-table">
+                            <thead>
+                                <tr>
+                                    <th>Flow Duration</th>
+                                    <th>Fwd Pkts</th>
+                                    <th>Bwd Pkts</th>
+                                    <th>Port</th>
+                                    <th>Protocol</th>
+                                    <th>ML Prediction</th>
+                                    <th>Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody id="network-tbody">
+                                <!-- Populated dynamically by JS -->
+                            </tbody>
+                        </table>
+                        <div id="network-empty-state" style="text-align: center; padding: 2rem;" class="text-muted type-writer">
+                            Waiting for network packets...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/dashboard.js"></script>
+</body>
+</html>

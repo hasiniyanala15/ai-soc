@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SOC Agent - AI Investigations</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Specific styles for Investigations page */
+        .report-section {
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .report-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .report-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        .report-content {
+            font-size: 1rem;
+            color: var(--text-main);
+            line-height: 1.6;
+        }
+        .mono-box {
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 1rem;
+            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+            font-family: 'Consolas', monospace;
+            color: var(--accent-primary);
+            white-space: pre-wrap;
+            border: 1px solid rgba(0, 243, 255, 0.4);
+            margin-top: 0.5rem;
+            font-size: 0.875rem;
+            box-shadow: inset 0 0 10px rgba(0, 243, 255, 0.1);
+        }
+        
+        /* Feedback section */
+        .feedback-box {
+            background-color: rgba(0, 243, 255, 0.05);
+            border: 1px solid rgba(0, 243, 255, 0.4);
+            backdrop-filter: blur(10px);
+            padding: 1.5rem;
+            clip-path: polygon(0 15px, 15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%);
+            margin-top: 2rem;
+            text-align: center;
+            box-shadow: inset 0 0 20px rgba(0, 243, 255, 0.1);
+        }
+        .feedback-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        /* Utility Views */
+        .loading-view, .error-view, .empty-view {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem 0;
+            text-align: center;
+        }
+        
+        .huge-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid rgba(6, 182, 212, 0.2);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1.5rem;
+        }
+        
+        #report-container {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i data-lucide="shield" class="logo-icon"></i>
+                    <div>
+                        <h2>AI SOC Agent</h2>
+                        <span class="subtitle">Intelligent SOC</span>
+                    </div>
+                </div>
+                <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('active')">
+                    <i data-lucide="menu"></i>
+                </button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i> Overview</a>
+                <a href="alerts.html" class="nav-item"><i data-lucide="alert-triangle"></i> Security Alerts</a>
+                <a href="investigations.html" class="nav-item active"><i data-lucide="search"></i> AI Investigations</a>
+                <a href="memory.html" class="nav-item"><i data-lucide="brain"></i> Incident Memory</a>
+                <a href="settings.html" class="nav-item"><i data-lucide="settings"></i> Settings</a>
+            </nav>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <header class="top-header">
+                <div>
+                    <h1>AI Investigation Report</h1>
+                    <p class="text-muted">Review the AI's analysis and recommended actions.</p>
+                </div>
+            </header>
+
+            <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+                <input type="number" id="search-id" class="input-premium" style="flex: 0 1 250px;" placeholder="Enter Alert ID (e.g. 1)">
+                <button class="btn btn-secondary" id="btn-load-report">View Report</button>
+            </div>
+
+            <div class="card">
+                <!-- Empty State -->
+                <div id="empty-view" class="empty-view" style="display: flex;">
+                    <i data-lucide="search" style="width: 48px; height: 48px; color: var(--text-muted); margin-bottom: 1rem;"></i>
+                    <h3 class="text-muted">No Investigation Selected</h3>
+                    <p class="text-muted" style="margin-top: 0.5rem;">Enter an Alert ID above or click "Investigate" from the Security Alerts page.</p>
+                </div>
+
+                <!-- Loading State -->
+                <div id="loading-view" class="loading-view">
+                    <div class="huge-spinner"></div>
+                    <h3>AI is Investigating...</h3>
+                    <p class="text-muted" style="margin-top: 0.5rem;">Retrieving memories and analyzing threat vectors.</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="error-view" class="error-view">
+                    <i data-lucide="alert-octagon" style="width: 48px; height: 48px; color: var(--status-high); margin-bottom: 1rem;"></i>
+                    <h3 id="error-message" style="color: var(--status-high);">Investigation Failed</h3>
+                    <button class="btn btn-primary" id="btn-retry" style="margin-top: 1.5rem;">Retry Investigation</button>
+                </div>
+
+                <!-- Actual Report -->
+                <div id="report-container">
+                    <div class="report-header">
+                        <div>
+                            <div class="report-label">Report for Alert ID: <span id="val-report-id"></span></div>
+                            <h2 id="val-alert-summary" style="margin-top: 0.5rem;">Loading summary...</h2>
+                        </div>
+                        <div>
+                            <span id="badge-confidence" class="badge badge-high" style="font-size: 0.875rem;">Confidence: High</span>
+                        </div>
+                    </div>
+
+                    <div class="report-section">
+                        <div class="report-label">Attack Type</div>
+                        <div class="report-content" id="val-attack-type" style="text-transform: capitalize; font-weight: 500;">-</div>
+                    </div>
+
+                    <div class="report-section">
+                        <div class="report-label">Possible Explanation</div>
+                        <div class="report-content" id="val-explanation">-</div>
+                    </div>
+
+                    <div class="report-section">
+                        <div class="report-label">Technical Evidence</div>
+                        <div class="mono-box" id="val-evidence">-</div>
+                    </div>
+
+                    <div class="report-section">
+                        <div class="report-label">Related Incidents (Hindsight Memory)</div>
+                        <div class="report-content" id="val-memory" style="font-style: italic;">-</div>
+                    </div>
+
+                    <div class="report-section">
+                        <div class="report-label">Recommended Investigation Steps</div>
+                        <div class="report-content">
+                            <ul id="val-steps" style="padding-left: 1.25rem;"></ul>
+                        </div>
+                    </div>
+
+                    <div class="report-section">
+                        <div class="report-label">Recommended Response Action</div>
+                        <div class="report-content" id="val-response" style="color: var(--status-medium); font-weight: 500;">-</div>
+                    </div>
+                    
+                    <div class="report-section" id="section-limitations">
+                        <div class="report-label">Limitations</div>
+                        <div class="report-content text-muted" id="val-limitations" style="font-size: 0.875rem;">-</div>
+                    </div>
+
+                    <!-- Feedback Box -->
+                    <div class="feedback-box">
+                        <h3>Analyst Feedback</h3>
+                        <p class="text-muted" style="margin-top: 0.5rem; font-size: 0.875rem;">Help the AI learn by providing feedback on this investigation.</p>
+                        
+                        <div id="feedback-controls" class="feedback-buttons">
+                            <button class="btn btn-secondary" onclick="submitAnalystFeedback('Correct', true)" style="border-color: var(--status-low); color: var(--status-low);">
+                                <i data-lucide="thumbs-up"></i> Correct
+                            </button>
+                            <button class="btn btn-secondary" onclick="submitAnalystFeedback('Needs further investigation', false)" style="border-color: var(--status-medium); color: var(--status-medium);">
+                                <i data-lucide="help-circle"></i> Needs Review
+                            </button>
+                            <button class="btn btn-secondary" onclick="submitAnalystFeedback('Incorrect', false)" style="border-color: var(--status-high); color: var(--status-high);">
+                                <i data-lucide="thumbs-down"></i> Incorrect
+                            </button>
+                        </div>
+                        <div id="feedback-success" style="display: none; color: var(--status-low); margin-top: 1rem; font-weight: 500;">
+                            <i data-lucide="check-circle" style="width: 16px; height: 16px; display: inline-block; vertical-align: middle;"></i> Feedback saved to Hindsight!
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/investigations.js"></script>
+</body>
+</html>

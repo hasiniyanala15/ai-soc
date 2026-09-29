@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SOC Agent - Incident Memory</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i data-lucide="shield" class="logo-icon"></i>
+                    <div>
+                        <h2>AI SOC Agent</h2>
+                        <span class="subtitle">Intelligent SOC</span>
+                    </div>
+                </div>
+                <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('active')">
+                    <i data-lucide="menu"></i>
+                </button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i> Overview</a>
+                <a href="alerts.html" class="nav-item"><i data-lucide="alert-triangle"></i> Security Alerts</a>
+                <a href="investigations.html" class="nav-item"><i data-lucide="search"></i> AI Investigations</a>
+                <a href="memory.html" class="nav-item active"><i data-lucide="brain"></i> Incident Memory</a>
+                <a href="settings.html" class="nav-item"><i data-lucide="settings"></i> Settings</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-header">
+                <div>
+                    <h1>Hindsight Incident Memory</h1>
+                    <p class="text-muted">Long-term AI memory and incident context store.</p>
+                </div>
+            </header>
+
+            <div class="card" style="margin-bottom: 2rem;">
+                <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+                    <i data-lucide="brain" style="width: 48px; height: 48px; color: var(--accent-primary);"></i>
+                    <div>
+                        <h2 id="val-memory-status" style="font-size: 1.5rem;">Checking Status...</h2>
+                        <p class="text-muted" id="val-memory-url">Connecting to Hindsight server...</p>
+                    </div>
+                </div>
+                
+                <div style="background-color: rgba(10, 15, 30, 0.8); backdrop-filter: blur(10px); padding: 1.5rem; clip-path: polygon(0 15px, 15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%); border: 1px solid rgba(0, 243, 255, 0.3); box-shadow: inset 0 0 20px rgba(0, 243, 255, 0.1);">
+                    <h3 style="margin-bottom: 1rem; color: var(--accent-primary);">How Hindsight Memory Works</h3>
+                    <p style="margin-bottom: 1rem; line-height: 1.7; color: var(--text-main);">
+                        This AI SOC Agent uses <strong>Hindsight</strong> to store and retrieve past security investigations. 
+                        Unlike traditional databases that just store rows of data, Hindsight allows our AI Investigator to 
+                        understand the <em>context</em> of previous attacks and learn from Analyst Feedback.
+                    </p>
+                    <p style="line-height: 1.7; color: var(--text-main);">
+                        When you click "Investigate" on an alert, the AI automatically recalls similar past incidents 
+                        and embeds them directly into its analysis report. This prevents the AI from repeating mistakes and 
+                        helps it detect coordinated campaigns over time.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="card table-card">
+                <h3>Recent System Activity</h3>
+                <p class="text-muted" style="margin-top: 0.5rem; margin-bottom: 1.5rem; font-size: 0.875rem;">
+                    Note: Detailed memory records are injected directly into the AI's brain during investigation. Below are the most recently recorded alerts in the system.
+                </p>
+                <div class="table-responsive">
+                    <table id="alerts-table">
+                        <thead>
+                            <tr>
+                                <th>Incident ID</th>
+                                <th>Source IP</th>
+                                <th>Attack Type</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="memory-tbody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/memory.js"></script>
+</body>
+</html>

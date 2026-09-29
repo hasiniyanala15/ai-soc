@@ -1,0 +1,20 @@
+{
+    "features": [
+        "Flow Duration",
+        "Total Fwd Packets",
+        "Total Backward Packets",
+        "Total Length of Fwd Packets",
+        "Destination Port",
+        "Protocol",
+        "Flow Bytes/s",
+        "Failed Logins"
+    ],
+    "classes": [
+        "Benign",
+        "Brute Force",
+        "DoS",
+        "PortScan"
+    ],
+    "model_type": "Decision Tree",
+    "version": "1.0"
+}

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SOC Agent - Settings</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            padding: 0.75rem 1rem;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.3s ease;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+        }
+        .settings-section {
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .settings-section h3 {
+            color: var(--accent-primary);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i data-lucide="shield" class="logo-icon"></i>
+                    <div>
+                        <h2>AI SOC Agent</h2>
+                        <span class="subtitle">Intelligent SOC</span>
+                    </div>
+                </div>
+                <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('active')">
+                    <i data-lucide="menu"></i>
+                </button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i> Overview</a>
+                <a href="alerts.html" class="nav-item"><i data-lucide="alert-triangle"></i> Security Alerts</a>
+                <a href="investigations.html" class="nav-item"><i data-lucide="search"></i> AI Investigations</a>
+                <a href="memory.html" class="nav-item"><i data-lucide="brain"></i> Incident Memory</a>
+                <a href="settings.html" class="nav-item active"><i data-lucide="settings"></i> Settings</a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <div class="status-dot" id="backend-dot"></div>
+                    <span id="backend-status-text">Connecting...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <header class="top-header">
+                <div>
+                    <h1>System Configuration</h1>
+                    <p class="text-muted">Manage LLM, Memory, and Network parameters</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="btn-save-settings"><i data-lucide="save"></i> Save Settings</button>
+                </div>
+            </header>
+
+            <div class="dashboard-grid">
+                <div class="card table-card" style="grid-column: 1 / -1; max-width: 800px; margin: 0 auto; width: 100%;">
+                    
+                    <div class="settings-section">
+                        <h3><i data-lucide="cpu"></i> Large Language Model (LLM)</h3>
+                        <div class="form-group">
+                            <label for="llm-api-key">API Key</label>
+                            <input type="password" id="llm-api-key" placeholder="Enter API Key">
+                        </div>
+                        <div class="form-group">
+                            <label for="llm-api-url">API URL Base</label>
+                            <input type="text" id="llm-api-url" placeholder="https://api.groq.com/openai/v1/chat/completions">
+                        </div>
+                        <div class="form-group">
+                            <label for="llm-model">Model Name</label>
+                            <input type="text" id="llm-model" placeholder="openai/gpt-oss-20b">
+                        </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3><i data-lucide="brain"></i> Hindsight Agent Memory</h3>
+                        <div class="form-group">
+                            <label for="hindsight-api-key">Hindsight API Key</label>
+                            <input type="password" id="hindsight-api-key" placeholder="Enter Hindsight API Key (leave empty to disable)">
+                        </div>
+                    </div>
+
+                    <div class="settings-section" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">
+                        <h3><i data-lucide="activity"></i> Network Live Sniffer</h3>
+                        <div class="form-group">
+                            <label for="sniffer-timeout">Sniffer Tracking Window (Seconds)</label>
+                            <input type="number" id="sniffer-timeout" min="1" max="60" placeholder="3">
+                            <small class="text-muted" style="display: block; margin-top: 5px;">How long the ML agent will listen on the wire for packets to compute flow duration and payload bytes per second.</small>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/settings.js"></script>
+</body>
+</html>

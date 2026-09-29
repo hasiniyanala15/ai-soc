@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI SOC Agent - Security Alerts</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Specific styles for alerts page */
+        .controls-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        
+        /* Modal for Alert Details */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(6, 9, 19, 0.8);
+            backdrop-filter: blur(5px);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal {
+            background-color: rgba(10, 15, 30, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--accent-critical, #E11D48);
+            clip-path: polygon(0 20px, 20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%);
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 0 50px rgba(225, 29, 72, 0.3), inset 0 0 20px rgba(225, 29, 72, 0.2);
+            animation: fadeIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-body {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .modal-footer {
+            padding: 1.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+        .evidence-box {
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 1rem;
+            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+            font-family: 'Consolas', monospace;
+            color: var(--accent-primary);
+            white-space: pre-wrap;
+            border: 1px solid rgba(0, 243, 255, 0.4);
+            font-size: 0.875rem;
+            box-shadow: inset 0 0 10px rgba(0, 243, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <i data-lucide="shield" class="logo-icon"></i>
+                    <div>
+                        <h2>AI SOC Agent</h2>
+                        <span class="subtitle">Intelligent SOC</span>
+                    </div>
+                </div>
+                <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar-nav').classList.toggle('active')">
+                    <i data-lucide="menu"></i>
+                </button>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i> Overview</a>
+                <a href="alerts.html" class="nav-item active"><i data-lucide="alert-triangle"></i> Security Alerts</a>
+                <a href="investigations.html" class="nav-item"><i data-lucide="search"></i> AI Investigations</a>
+                <a href="memory.html" class="nav-item"><i data-lucide="brain"></i> Incident Memory</a>
+                <a href="settings.html" class="nav-item"><i data-lucide="settings"></i> Settings</a>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <header class="top-header">
+                <div>
+                    <h1>Security Alerts</h1>
+                    <p class="text-muted">Manage and investigate detected threats.</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="btn-refresh"><i data-lucide="refresh-cw"></i> Refresh</button>
+                </div>
+            </header>
+
+            <div class="controls-bar">
+                <input type="text" id="search-input" class="input-premium" style="flex: 1; min-width: 250px;" placeholder="Search by ID, IP, or type...">
+                <select id="filter-severity" class="input-premium">
+                    <option value="ALL">All Severities</option>
+                    <option value="HIGH">High</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="LOW">Low</option>
+                </select>
+                <select id="sort-time" class="input-premium">
+                    <option value="DESC">Newest First</option>
+                    <option value="ASC">Oldest First</option>
+                </select>
+            </div>
+
+            <div class="card table-card">
+                <div class="table-responsive">
+                    <table id="alerts-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Type</th>
+                                <th>Source IP</th>
+                                <th>Severity</th>
+                                <th>Detected At</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alerts-tbody">
+                            <!-- Populated dynamically -->
+                        </tbody>
+                    </table>
+                    <div id="alerts-empty-state" style="display: none; text-align: center; padding: 3rem;" class="text-muted">
+                        No alerts match your criteria.
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Alert Detail Modal -->
+    <div class="modal-overlay" id="alert-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">Alert Details</h2>
+                <button class="btn btn-secondary" style="border:none; padding:0.25rem;" onclick="closeModal()">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div><strong>Source IP:</strong> <span id="modal-ip"></span></div>
+                <div><strong>Detection Reason:</strong> <span id="modal-reason"></span></div>
+                <div>
+                    <strong>Evidence:</strong>
+                    <div class="evidence-box" id="modal-evidence"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn btn-primary" id="btn-investigate">
+                    <i data-lucide="cpu"></i> Investigate with AI
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/alerts.js"></script>
+</body>
+</html>
