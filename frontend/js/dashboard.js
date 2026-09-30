@@ -4,8 +4,6 @@
 
 let chartInstance = null;
 let networkChartInstance = null;
-let networkLabels = [];
-let networkData = [];
 
 // Initialize Lucide icons
 lucide.createIcons();
@@ -94,16 +92,20 @@ async function loadDashboardData() {
                 // Extract new JSON fields
                 let desc = "No description";
                 let recAction = "N/A";
+                let target = "Unknown";
                 try {
                     const ev = typeof alert.evidence === 'string' ? JSON.parse(alert.evidence) : alert.evidence;
                     if (ev && ev.Description) desc = ev.Description;
                     if (ev && ev["Recommended Action"]) recAction = ev["Recommended Action"];
+                    if (ev && ev.Target) target = ev.Target;
                 } catch (e) {}
+
+                let routingStr = target !== "Unknown" ? `${alert.source_ip} ➔ ${target}` : alert.source_ip;
 
                 tr.innerHTML = `
                     <td>#${alert.id}</td>
                     <td style="text-transform: capitalize;">${alert.alert_type.replace('_', ' ')}</td>
-                    <td style="font-family: monospace;">${alert.source_ip}</td>
+                    <td style="font-family: monospace; font-size: 0.85em; white-space: nowrap;">${routingStr}</td>
                     <td><span class="badge ${badgeClass}">${alert.severity}</span></td>
                     <td>${desc}</td>
                     <td>${recAction}</td>
@@ -166,6 +168,11 @@ function updateChart(alerts) {
     });
 }
 
+// Initialize with 15 empty points for smooth scrolling
+let networkLabels = Array(15).fill('');
+let networkData = Array(15).fill(0);
+let currentThroughput = 0;
+
 function initNetworkChart() {
     const ctx = document.getElementById('networkChart');
     if (!ctx) return;
@@ -175,19 +182,22 @@ function initNetworkChart() {
         data: {
             labels: networkLabels,
             datasets: [{
-                label: 'Flow Duration (ms)',
+                label: 'Throughput (Bytes/s)',
                 data: networkData,
                 borderColor: '#00F3FF',
                 backgroundColor: 'rgba(0, 243, 255, 0.1)',
                 borderWidth: 2,
                 fill: true,
                 tension: 0.4,
-                pointBackgroundColor: '#00F3FF'
+                pointRadius: 0 // Hide points for a smoother look
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: {
+                duration: 0 // Disable animation for live scrolling
+            },
             plugins: {
                 legend: { display: false }
             },
@@ -195,27 +205,35 @@ function initNetworkChart() {
                 x: { display: false },
                 y: { 
                     display: true, 
+                    beginAtZero: true,
+                    suggestedMax: 1000,
                     grid: { color: 'rgba(255, 255, 255, 0.1)' },
                     ticks: { color: '#9CA3AF' }
                 }
             }
         }
     });
+
+    // Auto-scrolling interval
+    setInterval(() => {
+        const now = new Date();
+        networkLabels.push(now.toLocaleTimeString());
+        
+        networkData.push(currentThroughput);
+        
+        if (networkLabels.length > 15) {
+            networkLabels.shift();
+            networkData.shift();
+        }
+        
+        networkChartInstance.update();
+    }, 1000);
 }
 
-function updateNetworkChart(flowDuration) {
+function updateNetworkChart(bytesPerSec) {
     if (!networkChartInstance) return;
-    
-    const now = new Date();
-    networkLabels.push(now.toLocaleTimeString());
-    networkData.push(flowDuration);
-    
-    if (networkLabels.length > 15) {
-        networkLabels.shift();
-        networkData.shift();
-    }
-    
-    networkChartInstance.update();
+    // Set the spike
+    currentThroughput = bytesPerSec;
 }
 
 // -----------------------------------------
@@ -228,6 +246,66 @@ document.getElementById('btn-refresh').addEventListener('click', () => {
     showToast("Dashboard refreshed");
 });
 
+// Continuous Background Sniffing Loop
+let isSniffing = false;
+async function continuousSniffer() {
+    if (isSniffing) return;
+    isSniffing = true;
+    
+    try {
+        const res = await sniffLivePacket();
+        if (res && res.predictions) {
+            // Only update table if we actually found packets (not empty)
+            if (res.predictions.length > 0) {
+                let newAlerts = 0;
+                res.predictions.forEach(prediction => {
+                    // Only add to table if it's an actual alert (not benign) to avoid spamming the UI
+                    if (prediction.alert_created && prediction.predicted_class !== 'Benign') {
+                        const packet = prediction.packet;
+                        const tbody = document.getElementById('network-tbody');
+                        const tr = document.createElement('tr');
+                        tr.className = 'highlight-row';
+                        
+                        const conf = prediction.confidence_score ? (prediction.confidence_score * 100).toFixed(1) + '%' : 'N/A';
+                        const color = prediction.predicted_class === 'Benign' ? 'var(--status-low)' : 'var(--status-high)';
+                        const protoStr = packet['Protocol'] === 6 ? 'TCP' : (packet['Protocol'] === 17 ? 'UDP' : packet['Protocol']);
+                        
+                        tr.innerHTML = `
+                            <td>${Math.round(packet['Flow Duration'])}µs</td>
+                            <td>${packet['Total Fwd Packets']}</td>
+                            <td>${packet['Total Backward Packets']}</td>
+                            <td>${packet['Destination Port']}</td>
+                            <td>${protoStr}</td>
+                            <td style="color: ${color}; font-weight: bold;">${prediction.predicted_class}</td>
+                            <td>${conf}</td>
+                        `;
+                        
+                        tbody.insertBefore(tr, tbody.firstChild);
+                        if (tbody.children.length > 10) tbody.removeChild(tbody.lastChild);
+                        newAlerts++;
+                    }
+                });
+                
+                if (newAlerts > 0) {
+                    showToast(`${newAlerts} New Alert(s) Detected in Background!`, "error");
+                    loadDashboardData();
+                    document.getElementById('network-empty-state').style.display = 'none';
+                }
+            }
+            
+            // Sustain the throughput level for the chart until the next poll
+            if (res.total_throughput !== undefined) {
+                currentThroughput = res.total_throughput;
+            }
+        }
+    } catch (err) {
+        console.error("Background sniff failed", err);
+    } finally {
+        isSniffing = false;
+        // Schedule the next sniff immediately after this one finishes
+        setTimeout(continuousSniffer, 1000);
+    }
+}
 
 
 document.getElementById('btn-simulate-packet').addEventListener('click', async (e) => {
@@ -238,40 +316,53 @@ document.getElementById('btn-simulate-packet').addEventListener('click', async (
     
     try {
         const res = await sniffLivePacket();
-        const packet = res.packet;
+        const predictions = res.predictions || [];
         
         // Hide empty state
         document.getElementById('network-empty-state').style.display = 'none';
         
-        // Append row to table
-        const tbody = document.getElementById('network-tbody');
-        const tr = document.createElement('tr');
-        tr.className = 'highlight-row';
+        let newAlerts = 0;
         
-        // Format confidence (e.g. 95.0%)
-        const conf = res.confidence_score ? (res.confidence_score * 100).toFixed(1) + '%' : 'N/A';
-        const color = res.predicted_class === 'Benign' ? 'var(--status-low)' : 'var(--status-high)';
+        predictions.forEach(prediction => {
+            const packet = prediction.packet;
+            
+            // Append row to table
+            const tbody = document.getElementById('network-tbody');
+            const tr = document.createElement('tr');
+            tr.className = 'highlight-row';
+            
+            // Format confidence (e.g. 95.0%)
+            const conf = prediction.confidence_score ? (prediction.confidence_score * 100).toFixed(1) + '%' : 'N/A';
+            const color = prediction.predicted_class === 'Benign' ? 'var(--status-low)' : 'var(--status-high)';
+            
+            // Format Protocol
+            const protoStr = packet['Protocol'] === 6 ? 'TCP' : (packet['Protocol'] === 17 ? 'UDP' : packet['Protocol']);
+            
+            tr.innerHTML = `
+                <td>${Math.round(packet['Flow Duration'])}µs</td>
+                <td>${packet['Total Fwd Packets']}</td>
+                <td>${packet['Total Backward Packets']}</td>
+                <td>${packet['Destination Port']}</td>
+                <td>${protoStr}</td>
+                <td style="color: ${color}; font-weight: bold;">${prediction.predicted_class}</td>
+                <td>${conf}</td>
+            `;
+            
+            // Prepend to top
+            tbody.insertBefore(tr, tbody.firstChild);
+            
+            // Keep only top 10 rows
+            if (tbody.children.length > 10) {
+                tbody.removeChild(tbody.lastChild);
+            }
+            
+            if (prediction.alert_created) newAlerts++;
+        });
         
-        tr.innerHTML = `
-            <td>${Math.round(packet['Flow Duration'])}ms</td>
-            <td>${packet['Total Fwd Packets']}</td>
-            <td>${packet['Total Backward Packets']}</td>
-            <td>${packet['Destination Port']}</td>
-            <td>TCP</td>
-            <td style="color: ${color}; font-weight: bold;">${res.predicted_class}</td>
-            <td>${conf}</td>
-        `;
-        
-        // Prepend to top
-        tbody.insertBefore(tr, tbody.firstChild);
-        
-        // Keep only top 5 rows
-        if (tbody.children.length > 5) {
-            tbody.removeChild(tbody.lastChild);
+        // Update Chart with total throughput of all flows
+        if (res.total_throughput !== undefined) {
+            updateNetworkChart(res.total_throughput);
         }
-        
-        // Update Chart
-        updateNetworkChart(packet['Flow Duration']);
         
         // Show raw summary in toast for fun
         if(res.raw_summary) {
@@ -279,13 +370,13 @@ document.getElementById('btn-simulate-packet').addEventListener('click', async (
         }
         
         // Refresh alerts if a new one was created
-        if(res.alert_created) {
-            showToast(`New Alert Generated: ${res.predicted_class}!`, "error");
+        if(newAlerts > 0) {
+            showToast(`${newAlerts} New Alert(s) Generated!`, "error");
             loadDashboardData();
         }
         
     } catch (err) {
-        showToast("Failed to sniff live packet. Ensure Npcap is installed and backend has permissions.", "error");
+        showToast(`Live capture failed: ${err.message}`, "error");
     } finally {
         btn.innerHTML = originalHtml;
         btn.disabled = false;
@@ -320,12 +411,14 @@ document.getElementById('btn-simulate-attack').addEventListener('click', async (
         const conf = res.confidence_score ? (res.confidence_score * 100).toFixed(1) + '%' : 'N/A';
         const color = 'var(--accent-critical)';
         
+        const protoStr = packet['Protocol'] === 6 ? 'TCP' : (packet['Protocol'] === 17 ? 'UDP' : packet['Protocol']);
+        
         tr.innerHTML = `
-            <td>${Math.round(packet['Flow Duration'])}ms</td>
+            <td>${Math.round(packet['Flow Duration'])}µs</td>
             <td>${packet['Total Fwd Packets']}</td>
             <td>${packet['Total Backward Packets']}</td>
             <td>${packet['Destination Port']}</td>
-            <td>TCP</td>
+            <td>${protoStr}</td>
             <td style="color: ${color}; font-weight: bold;">${res.predicted_class}</td>
             <td>${conf}</td>
         `;
@@ -339,7 +432,7 @@ document.getElementById('btn-simulate-attack').addEventListener('click', async (
         }
         
         // Update Chart
-        updateNetworkChart(packet['Flow Duration']);
+        updateNetworkChart(packet['Flow Bytes/s']);
         
         if(res.raw_summary) {
             showToast(`Simulated: ${res.raw_summary}`);
@@ -364,4 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkConnection();
     loadDashboardData();
     initNetworkChart();
+    
+    // Start continuous sniffing
+    continuousSniffer();
 });

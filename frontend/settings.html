@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI SOC Agent - Settings</title>
+    <title>HindSOC - Settings</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/dashboard.css">
     <link rel="stylesheet" href="css/responsive.css">
@@ -56,7 +56,7 @@
                 <div style="display: flex; align-items: center; gap: 1rem;">
                     <i data-lucide="shield" class="logo-icon"></i>
                     <div>
-                        <h2>AI SOC Agent</h2>
+                        <h2>HindSOC</h2>
                         <span class="subtitle">Intelligent SOC</span>
                     </div>
                 </div>
@@ -116,6 +116,29 @@
                             <label for="hindsight-api-key">Hindsight API Key</label>
                             <input type="password" id="hindsight-api-key" placeholder="Enter Hindsight API Key (leave empty to disable)">
                         </div>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3><i data-lucide="shield-check"></i> Network Threat Model</h3>
+                        <p class="text-muted">Train the classifier on the labeled network-flow dataset and refresh its saved model.</p>
+                        <button class="btn btn-secondary" id="btn-train-network-model">
+                            <i data-lucide="database"></i> Train Network Model
+                        </button>
+                        <small id="model-training-status" class="text-muted" aria-live="polite"></small>
+                    </div>
+
+                    <div class="settings-section">
+                        <h3><i data-lucide="shield-ban"></i> Active IP Denylist</h3>
+                        <p class="text-muted">Managed SOC denylist only; this does not modify the operating system firewall.</p>
+                        <div class="table-responsive">
+                            <table id="ip-blocklist-table">
+                                <thead>
+                                    <tr><th>Source IP</th><th>Reason</th><th>Added</th><th>Action</th></tr>
+                                </thead>
+                                <tbody id="ip-blocklist-tbody"></tbody>
+                            </table>
+                        </div>
+                        <p id="ip-blocklist-empty" class="text-muted" hidden>No IPs are currently denylisted.</p>
                     </div>
 
                     <div class="settings-section" style="border-bottom: none; margin-bottom: 0; padding-bottom: 0;">

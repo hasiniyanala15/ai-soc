@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3
 from dotenv import load_dotenv
 
 try:
@@ -17,16 +18,29 @@ BANK_ID = "ai-soc-agent-bank"
 
 # Initialize client. We wrap in try-except for graceful failure.
 client = None
+fallback_db = "data/memory_fallback.db"
+
+def init_fallback_db():
+    os.makedirs("data", exist_ok=True)
+    conn = sqlite3.connect(fallback_db)
+    conn.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS memories 
+        USING fts5(content)
+    """)
+    conn.commit()
+    conn.close()
 
 def init_memory():
     global client
+    init_fallback_db()
+    
     if not HINDSIGHT_INSTALLED:
-        print("WARNING: hindsight-client is not installed.")
+        print("WARNING: hindsight-client is not installed. Using local SQLite fallback.")
         return
 
     # If the user put a placeholder in the .env, we shouldn't crash, just warn.
     if HINDSIGHT_API_KEY == "your_hindsight_api_key_here":
-        print("WARNING: Hindsight API Key is not configured. Memory is disabled.")
+        print("WARNING: Hindsight API Key is not configured. Using local SQLite fallback.")
         return
 
     try:
@@ -35,34 +49,41 @@ def init_memory():
         print("[SUCCESS] Hindsight Memory Client initialized successfully.")
     except Exception as e:
         print(f"WARNING: Failed to connect to Hindsight Server: {e}")
+        client = None
 
 # Call init once when the file loads
 init_memory()
 
 def retain_incident(alert_type, source_ip, evidence, summary, outcome, feedback=""):
     """
-    Stores a completed investigation into Hindsight long-term memory.
+    Stores a completed investigation into Hindsight long-term memory or local fallback.
     """
-    if not client:
-        print("[MEMORY] Hindsight is unavailable. Skipping memory retention.")
-        return False
-        
+    content = (
+        f"Incident Report: {alert_type} attack from IP {source_ip}.\n"
+        f"Evidence: {json.dumps(evidence)}\n"
+        f"Investigation Summary: {summary}\n"
+        f"Outcome: {outcome}\n"
+        f"Analyst Feedback: {feedback}"
+    )
+
+    if client:
+        try:
+            client.retain(bank_id=BANK_ID, content=content)
+            print(f"[MEMORY] Incident retained successfully for {source_ip}.")
+            return True
+        except Exception as e:
+            print(f"[MEMORY] Hindsight failed, falling back to local DB: {e}")
+            
+    # Fallback to local DB
     try:
-        # Format the memory. We ensure no passwords are sent here.
-        content = (
-            f"Incident Report: {alert_type} attack from IP {source_ip}.\n"
-            f"Evidence: {json.dumps(evidence)}\n"
-            f"Investigation Summary: {summary}\n"
-            f"Outcome: {outcome}\n"
-            f"Analyst Feedback: {feedback}"
-        )
-        
-        # Call Hindsight's retain API
-        client.retain(bank_id=BANK_ID, content=content)
-        print(f"[MEMORY] Incident retained successfully for {source_ip}.")
+        conn = sqlite3.connect(fallback_db)
+        conn.execute("INSERT INTO memories (content) VALUES (?)", (content,))
+        conn.commit()
+        conn.close()
+        print(f"[MEMORY-FALLBACK] Incident retained locally for {source_ip}.")
         return True
     except Exception as e:
-        print(f"[MEMORY] Failed to retain incident: {e}")
+        print(f"[MEMORY-FALLBACK] Failed to retain incident: {e}")
         return False
 
 def recall_incidents(query):
@@ -70,32 +91,47 @@ def recall_incidents(query):
     Retrieves past incidents relevant to a search query (like an IP address).
     Returns a list of string summaries of past incidents.
     """
-    if not client:
-        print("[MEMORY] Hindsight is unavailable. Returning empty past incidents.")
-        return []
-        
+    if client:
+        try:
+            results = client.recall(bank_id=BANK_ID, query=query)
+            return [r.text for r in getattr(results, 'results', [])]
+        except Exception as e:
+            print(f"[MEMORY] Hindsight failed, falling back to local DB: {e}")
+            
+    # Fallback to local DB
     try:
-        results = client.recall(bank_id=BANK_ID, query=query)
-        # Extract the text chunks from the recall results
-        return [r.text for r in getattr(results, 'results', [])]
+        conn = sqlite3.connect(fallback_db)
+        # We replace spaces with AND for FTS search
+        fts_query = " AND ".join(f'"{term}"' for term in str(query).split())
+        cursor = conn.execute("SELECT content FROM memories WHERE memories MATCH ? LIMIT 5", (fts_query,))
+        results = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        
+        # If no results on FTS, try a LIKE fallback
+        if not results:
+            conn = sqlite3.connect(fallback_db)
+            like_query = f"%{query}%"
+            cursor = conn.execute("SELECT content FROM memories WHERE content LIKE ? LIMIT 5", (like_query,))
+            results = [row[0] for row in cursor.fetchall()]
+            conn.close()
+            
+        return results
     except Exception as e:
-        print(f"[MEMORY] Failed to recall incidents: {e}")
+        print(f"[MEMORY-FALLBACK] Failed to recall incidents: {e}")
         return []
 
 def reflect_on_incidents(question):
     """
     Uses Hindsight's reflect capability to reason over all past memories.
     """
-    if not client:
-        return "Memory unavailable. Cannot reflect."
-        
-    try:
-        # reflect allows asking analytical questions over the whole memory bank
-        result = client.reflect(bank_id=BANK_ID, query=question)
-        return getattr(result, 'answer', str(result)) 
-    except Exception as e:
-        print(f"[MEMORY] Failed to reflect on incidents: {e}")
-        return f"Error reflecting: {e}"
+    if client:
+        try:
+            result = client.reflect(bank_id=BANK_ID, query=question)
+            return getattr(result, 'answer', str(result)) 
+        except Exception as e:
+            print(f"[MEMORY] Hindsight failed to reflect: {e}")
+            
+    return "Memory unavailable or using local fallback (Reflection not supported offline)."
 
 if __name__ == "__main__":
     # Test connection handling by triggering a retain action
@@ -103,3 +139,4 @@ if __name__ == "__main__":
     success = retain_incident("brute_force", "127.0.0.1", {}, "Test", "Test")
     if not success:
         print("As expected, retention did not occur without a running Hindsight server/valid API key.")
+

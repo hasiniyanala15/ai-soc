@@ -80,11 +80,25 @@ function renderAlerts() {
         const badgeClass = alert.severity.toLowerCase() === 'high' ? 'badge-high' : 
                            alert.severity.toLowerCase() === 'medium' ? 'badge-medium' : 'badge-low';
                            
+        let desc = "No description";
+        let recAction = "N/A";
+        let target = "Unknown";
+        try {
+            const ev = typeof alert.evidence === 'string' ? JSON.parse(alert.evidence) : alert.evidence;
+            if (ev && ev.Description) desc = ev.Description;
+            if (ev && ev["Recommended Action"]) recAction = ev["Recommended Action"];
+            if (ev && ev.Target) target = ev.Target;
+        } catch (e) {}
+
+        let routingStr = target !== "Unknown" ? `${alert.source_ip} ➔ ${target}` : alert.source_ip;
+
         tr.innerHTML = `
             <td>#${alert.id}</td>
             <td style="text-transform: capitalize;">${alert.alert_type.replace('_', ' ')}</td>
-            <td style="font-family: monospace;">${alert.source_ip}</td>
+            <td style="font-family: monospace; font-size: 0.85em; white-space: nowrap;">${routingStr}</td>
             <td><span class="badge ${badgeClass}">${alert.severity}</span></td>
+            <td>${desc}</td>
+            <td>${recAction}</td>
             <td class="text-muted">${new Date(alert.created_at).toLocaleString()}</td>
             <td>
                 <button class="btn btn-secondary" onclick="openAlertModal(${alert.id})" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">
@@ -159,6 +173,23 @@ document.getElementById('btn-investigate').addEventListener('click', async (e) =
         btn.innerHTML = originalHtml;
         btn.disabled = false;
         lucide.createIcons();
+    }
+});
+
+document.getElementById('btn-block-ip').addEventListener('click', async (e) => {
+    if (!currentAlertId) return;
+    const alert = allAlerts.find(item => item.id === currentAlertId);
+    if (!alert || !window.confirm(`Add ${alert.source_ip} to the managed denylist?`)) return;
+
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+        await blockAlertSource(currentAlertId);
+        showToast(`${alert.source_ip} added to the managed denylist`);
+    } catch (error) {
+        showToast(error.message || 'Failed to add IP to denylist', 'error');
+    } finally {
+        btn.disabled = false;
     }
 });
 

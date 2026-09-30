@@ -57,14 +57,15 @@ def process_alert(alert_id):
     print(f"[AGENT] Saving investigation report to database...")
     created_at = datetime.now(timezone.utc).isoformat()
     cursor.execute('''
-        INSERT INTO reports (alert_id, summary, attack_type, confidence, recommended_action, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO reports (alert_id, summary, attack_type, confidence, recommended_action, full_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ''', (
         alert_id,
         report.get('alert_summary', 'No summary provided.'),
         report.get('attack_type', 'unknown'),
         report.get('confidence_level', 'Unknown'),
         json.dumps(report.get('recommended_investigation_steps', [])),
+        json.dumps(report),
         created_at
     ))
     conn.commit()

@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import os
+import ipaddress
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
@@ -57,6 +58,7 @@ def init_db():
             attack_type TEXT,
             confidence TEXT,
             recommended_action TEXT,
+            full_json TEXT,
             created_at TEXT,
             FOREIGN KEY(alert_id) REFERENCES alerts(id)
         )
@@ -71,6 +73,19 @@ def init_db():
             was_helpful BOOLEAN,
             created_at TEXT,
             FOREIGN KEY(alert_id) REFERENCES alerts(id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ip_blocklist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_ip TEXT UNIQUE NOT NULL,
+            reason TEXT NOT NULL,
+            source_alert_id INTEGER,
+            active BOOLEAN NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            unblocked_at TEXT,
+            FOREIGN KEY(source_alert_id) REFERENCES alerts(id)
         )
     ''')
     
@@ -138,7 +153,60 @@ def create_alert(alert_type, severity, source_ip, evidence):
     alert_id = cursor.lastrowid
     conn.commit()
     conn.close()
+
+    if severity and severity.upper() in {"HIGH", "MEDIUM"}:
+        try:
+            block_ip(source_ip, f"Auto-blocked after {alert_type} alert #{alert_id}", alert_id)
+        except ValueError:
+            pass
+
     return alert_id
+
+def get_blocked_ips():
+    """Return active, analyst-managed IP denylist entries."""
+    conn = get_connection()
+    rows = conn.execute(
+        'SELECT * FROM ip_blocklist WHERE active = 1 ORDER BY created_at DESC'
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def block_ip(source_ip, reason, source_alert_id=None):
+    """Add or reactivate a valid IP address in the managed denylist."""
+    normalized_ip = ipaddress.ip_address(source_ip).compressed
+    created_at = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO ip_blocklist (source_ip, reason, source_alert_id, active, created_at, unblocked_at)
+        VALUES (?, ?, ?, 1, ?, NULL)
+        ON CONFLICT(source_ip) DO UPDATE SET
+            reason = excluded.reason,
+            source_alert_id = excluded.source_alert_id,
+            active = 1,
+            created_at = excluded.created_at,
+            unblocked_at = NULL
+    ''', (normalized_ip, reason, source_alert_id, created_at))
+    conn.commit()
+    row = cursor.execute(
+        'SELECT * FROM ip_blocklist WHERE source_ip = ?', (normalized_ip,)
+    ).fetchone()
+    conn.close()
+    return dict(row)
+
+def unblock_ip(block_id):
+    """Deactivate a denylist entry without deleting its audit history."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE ip_blocklist
+        SET active = 0, unblocked_at = ?
+        WHERE id = ? AND active = 1
+    ''', (datetime.now(timezone.utc).isoformat(), block_id))
+    conn.commit()
+    updated = cursor.rowcount > 0
+    conn.close()
+    return updated
 
 # Let's run this file directly to initialize the database
 if __name__ == "__main__":

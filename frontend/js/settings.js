@@ -10,7 +10,53 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Load initial settings
     await loadSettings();
+    await loadIpBlocklist();
 });
+
+async function loadIpBlocklist() {
+    const tbody = document.getElementById('ip-blocklist-tbody');
+    const emptyState = document.getElementById('ip-blocklist-empty');
+    try {
+        const response = await getBlockedIps();
+        const entries = response.blocked_ips || [];
+        tbody.replaceChildren();
+        emptyState.hidden = entries.length > 0;
+
+        for (const entry of entries) {
+            const row = document.createElement('tr');
+            for (const value of [
+                entry.source_ip,
+                entry.reason,
+                new Date(entry.created_at).toLocaleString()
+            ]) {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.appendChild(cell);
+            }
+
+            const actionCell = document.createElement('td');
+            const button = document.createElement('button');
+            button.className = 'btn btn-secondary';
+            button.textContent = 'Unblock';
+            button.addEventListener('click', async () => {
+                button.disabled = true;
+                try {
+                    await unblockIp(entry.id);
+                    await loadIpBlocklist();
+                } catch (error) {
+                    button.disabled = false;
+                    showToast(error.message || 'Failed to unblock IP', 'error');
+                }
+            });
+            actionCell.appendChild(button);
+            row.appendChild(actionCell);
+            tbody.appendChild(row);
+        }
+    } catch (error) {
+        emptyState.hidden = true;
+        showToast('Error loading IP denylist: ' + error.message, 'error');
+    }
+}
 
 async function loadSettings() {
     try {
@@ -64,5 +110,20 @@ document.getElementById('btn-save-settings').addEventListener('click', async (e)
         btn.innerHTML = originalHtml;
         btn.disabled = false;
         lucide.createIcons();
+    }
+});
+
+document.getElementById('btn-train-network-model').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const status = document.getElementById('model-training-status');
+    btn.disabled = true;
+    status.textContent = 'Training model...';
+    try {
+        const result = await trainNetworkModel();
+        status.textContent = result.message;
+    } catch (error) {
+        status.textContent = error.message || 'Model training failed.';
+    } finally {
+        btn.disabled = false;
     }
 });

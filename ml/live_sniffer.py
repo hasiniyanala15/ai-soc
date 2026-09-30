@@ -1,6 +1,4 @@
-from scapy.all import sniff, IP, TCP, UDP, IPv6
-from collections import defaultdict
-import time
+from scapy.all import sniff, IP, TCP, UDP, IPv6, conf
 import os
 
 def capture_live_packet():
@@ -11,12 +9,25 @@ def capture_live_packet():
     try:
         # Get timeout from environment, default to 3
         timeout_val = int(os.environ.get("SNIFFER_TIMEOUT", 3))
+        if timeout_val < 1:
+            return {"error": "SNIFFER_TIMEOUT must be at least 1 second."}
+
+        # Scapy's default interface can differ between machines or processes.
+        # Allow an explicit Scapy interface name (for example, \Device\NPF_{...}).
+        interface = os.environ.get("SNIFFER_INTERFACE") or None
         
         # Sniff packets for dynamic timeout window
-        packets = sniff(timeout=timeout_val)
+        packets = sniff(iface=interface, timeout=timeout_val)
         
         if not packets:
-            return {"error": "No packets found on interface within timeout."}
+            selected_interface = interface or str(conf.iface)
+            return {
+                "error": (
+                    f"No packets were captured on '{selected_interface}' within "
+                    f"{timeout_val} seconds. Check that this is the active network "
+                    "interface and that traffic is present."
+                )
+            }
             
         flows = {}
         
@@ -54,6 +65,7 @@ def capture_live_packet():
                 flows[flow_key_fwd] = {
                     'packets': [(pkt, 'fwd', pkt.time, length)], 
                     'src_ip': src, 
+                    'dst_ip': dst,
                     'dst_port': dport, 
                     'proto': proto
                 }
@@ -61,51 +73,41 @@ def capture_live_packet():
         if not flows:
             return {"error": "No valid IP/IPv6 flows captured."}
             
-        # Select the flow with the most packets to analyze
-        best_flow_key = max(flows, key=lambda k: len(flows[k]['packets']))
-        flow_data = flows[best_flow_key]
-        pkts = flow_data['packets']
-        
-        # Sort packets by time
-        pkts.sort(key=lambda x: x[2])
-        
-        start_time = pkts[0][2]
-        end_time = pkts[-1][2]
-        duration_sec = float(end_time - start_time)
-        
-        # CIC-IDS2017 uses Microseconds for flow duration
-        flow_duration = duration_sec * 1_000_000
-        
-        fwd_pkts = sum(1 for p in pkts if p[1] == 'fwd')
-        bwd_pkts = sum(1 for p in pkts if p[1] == 'bwd')
-        
-        fwd_length = sum(p[3] for p in pkts if p[1] == 'fwd')
-        bwd_length = sum(p[3] for p in pkts if p[1] == 'bwd')
-        total_length = fwd_length + bwd_length
-        
-        # Calculate Flow Bytes/s
-        if flow_duration > 0:
-            flow_bytes_s = (total_length / duration_sec)
-        else:
-            # If duration is 0 (e.g., single packet), flow bytes/s is technically undefined,
-            # but usually represented as 0 or total length in datasets for isolated packets
-            flow_bytes_s = 0.0
+        # Process ALL flows
+        processed_flows = []
+        for flow_key, flow_data in flows.items():
+            pkts = flow_data['packets']
+            pkts.sort(key=lambda x: x[2])
             
-        packet_features = {
-            "Source IP": flow_data['src_ip'],
-            "Flow Duration": flow_duration,
-            "Total Fwd Packets": fwd_pkts,
-            "Total Backward Packets": bwd_pkts,
-            "Total Length of Fwd Packets": fwd_length,
-            "Destination Port": flow_data['dst_port'],
-            "Protocol": flow_data['proto'],
-            "Flow Bytes/s": flow_bytes_s,
-            "Failed Logins": 0 # This dataset feature is rarely populated from pure pcap without deep inspection
-        }
-        
-        summary = f"Flow {flow_data['src_ip']} -> Port {flow_data['dst_port']} | {len(pkts)} pkts | {flow_duration/1000:.1f}ms"
-        
-        return {"status": "success", "packet": packet_features, "raw_summary": summary}
+            start_time = pkts[0][2]
+            end_time = pkts[-1][2]
+            duration_sec = float(end_time - start_time)
+            flow_duration = duration_sec * 1_000_000
+            
+            fwd_pkts = sum(1 for p in pkts if p[1] == 'fwd')
+            bwd_pkts = sum(1 for p in pkts if p[1] == 'bwd')
+            fwd_length = sum(p[3] for p in pkts if p[1] == 'fwd')
+            bwd_length = sum(p[3] for p in pkts if p[1] == 'bwd')
+            total_length = fwd_length + bwd_length
+            
+            flow_bytes_s = (total_length / duration_sec) if duration_sec > 0 else 0.0
+                
+            packet_features = {
+                "Source IP": flow_data['src_ip'],
+                "Destination IP": flow_data.get('dst_ip', 'Unknown'),
+                "Flow Duration": flow_duration,
+                "Total Fwd Packets": fwd_pkts,
+                "Total Backward Packets": bwd_pkts,
+                "Total Length of Fwd Packets": fwd_length,
+                "Destination Port": flow_data['dst_port'],
+                "Protocol": flow_data['proto'],
+                "Flow Bytes/s": flow_bytes_s,
+                "Failed Logins": 0
+            }
+            processed_flows.append(packet_features)
+            
+        summary = f"Analyzed {len(processed_flows)} distinct flows."
+        return {"status": "success", "packets": processed_flows, "raw_summary": summary}
         
     except Exception as e:
         return {"error": f"Failed to sniff packet: {str(e)}"}

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI SOC Agent - Security Alerts</title>
+    <title>HindSOC - Security Alerts</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/dashboard.css">
     <link rel="stylesheet" href="css/responsive.css">
@@ -86,7 +86,7 @@
                 <div style="display: flex; align-items: center; gap: 1rem;">
                     <i data-lucide="shield" class="logo-icon"></i>
                     <div>
-                        <h2>AI SOC Agent</h2>
+                        <h2>HindSOC</h2>
                         <span class="subtitle">Intelligent SOC</span>
                     </div>
                 </div>
@@ -135,8 +135,10 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Type</th>
-                                <th>Source IP</th>
+                                <th>Routing</th>
                                 <th>Severity</th>
+                                <th>Description</th>
+                                <th>Mitigation Strategy</th>
                                 <th>Detected At</th>
                                 <th>Action</th>
                             </tr>
@@ -172,6 +174,9 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn btn-secondary" id="btn-block-ip" title="Add this source IP to the managed denylist">
+                    <i data-lucide="shield-ban"></i> Add IP to Denylist
+                </button>
                 <button class="btn btn-primary" id="btn-investigate">
                     <i data-lucide="cpu"></i> Investigate with AI
                 </button>

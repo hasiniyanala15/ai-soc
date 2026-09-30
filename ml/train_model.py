@@ -8,8 +8,12 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score
 import json
 
-from dataset_loader import load_dataset
-from preprocess import clean_data, get_preprocessor, FEATURES, TARGET_COLUMN
+try:
+    from .dataset_loader import load_dataset
+    from .preprocess import clean_data, get_preprocessor, FEATURES, TARGET_COLUMN
+except ImportError:
+    from dataset_loader import load_dataset
+    from preprocess import clean_data, get_preprocessor, FEATURES, TARGET_COLUMN
 
 MODEL_PATH = "models/model.joblib"
 PREPROCESSOR_PATH = "models/preprocessor.joblib"

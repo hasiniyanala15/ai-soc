@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from database import get_recent_logs, create_alert
+from database import get_recent_logs, create_alert, get_blocked_ips
 from dotenv import load_dotenv
 import pandas as pd
 import joblib
@@ -16,12 +16,15 @@ def detect_brute_force(logs):
     Analyzes a list of security logs and detects brute-force attacks.
     Returns a list of generated alert IDs.
     """
+    blocked_ips = {entry['source_ip'] for entry in get_blocked_ips()}
     failed_attempts_by_ip = {}
     
     # 1. Group all FAILED attempts by IP address
     for log in logs:
         if log['login_status'] == 'FAILED':
             ip = log['source_ip']
+            if ip in blocked_ips:
+                continue
             if ip not in failed_attempts_by_ip:
                 failed_attempts_by_ip[ip] = []
             
@@ -112,6 +115,7 @@ def detect_anomalies_ml(logs):
     """
     Passes recent logs through the trained Isolation Forest ML model.
     """
+    blocked_ips = {entry['source_ip'] for entry in get_blocked_ips()}
     model_path = 'data/ml_model.pkl'
     if not os.path.exists(model_path):
         return []
@@ -146,6 +150,7 @@ def detect_anomalies_ml(logs):
     df_features['anomaly'] = predictions
     
     anomalies = df_features[df_features['anomaly'] == -1]
+    anomalies = anomalies[~anomalies['source_ip'].isin(blocked_ips)]
     
     alerts_created = []
     

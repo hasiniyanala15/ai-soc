@@ -81,3 +81,19 @@ async function getMemoryStatus() {
 async function sniffLivePacket() {
     return await fetchAPI('/ml/sniff');
 }
+
+async function blockAlertSource(alertId) {
+    return await fetchAPI(`/alerts/${alertId}/block-source`, { method: 'POST' });
+}
+
+async function getBlockedIps() {
+    return await fetchAPI('/ip-blocklist');
+}
+
+async function unblockIp(blockId) {
+    return await fetchAPI(`/ip-blocklist/${blockId}`, { method: 'DELETE' });
+}
+
+async function trainNetworkModel() {
+    return await fetchAPI('/ml/train', { method: 'POST' });
+}

@@ -1,9 +1,17 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+import ipaddress
 import os
 import json
 from datetime import datetime, timezone
-from database import get_connection, init_db, create_alert
+from database import (
+    block_ip,
+    create_alert,
+    get_blocked_ips,
+    get_connection,
+    init_db,
+    unblock_ip,
+)
 from log_generator import generate_logs
 from detector import run_detection
 from agent import process_alert
@@ -12,8 +20,12 @@ from dotenv import load_dotenv, set_key, dotenv_values
 load_dotenv()
 ENV_FILE = '.env'
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='frontend', static_url_path='/frontend')
 CORS(app) # Enable Cross-Origin Resource Sharing for the frontend
+
+@app.route('/frontend/<path:filename>')
+def serve_frontend(filename):
+    return send_from_directory('frontend', filename)
 
 # Initialize DB on startup
 init_db()
@@ -23,7 +35,7 @@ def index():
     return jsonify({
         "status": "online",
         "version": "1.0",
-        "message": "AI SOC Agent Backend is running."
+        "message": "HindSOC Backend is running."
     })
 
 @app.route('/health', methods=['GET'])
@@ -103,6 +115,50 @@ def train():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/ml/train', methods=['POST'])
+def train_network_model():
+    """Train the labeled network-threat classifier from the configured dataset."""
+    try:
+        from ml.train_model import train_and_compare
+        train_and_compare()
+        return jsonify({"message": "Network threat classifier trained successfully."}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/ip-blocklist', methods=['GET'])
+def list_blocked_ips():
+    return jsonify({"blocked_ips": get_blocked_ips()}), 200
+
+@app.route('/ip-blocklist/<int:block_id>', methods=['DELETE'])
+def remove_blocked_ip(block_id):
+    if not unblock_ip(block_id):
+        return jsonify({"error": "Active blocklist entry not found"}), 404
+    return jsonify({"message": "IP removed from the managed denylist."}), 200
+
+@app.route('/alerts/<int:alert_id>/block-source', methods=['POST'])
+def block_alert_source(alert_id):
+    conn = get_connection()
+    alert = conn.execute(
+        'SELECT source_ip, alert_type FROM alerts WHERE id = ?', (alert_id,)
+    ).fetchone()
+    conn.close()
+    if not alert:
+        return jsonify({"error": "Alert not found"}), 404
+
+    try:
+        blocked_ip = block_ip(
+            alert['source_ip'],
+            f"Added from alert #{alert_id}: {alert['alert_type']}",
+            alert_id,
+        )
+    except ValueError:
+        return jsonify({"error": "Alert source is not a valid IP address"}), 400
+
+    return jsonify({
+        "message": "Source IP added to the managed denylist.",
+        "blocked_ip": blocked_ip,
+    }), 201
+
 @app.route('/alerts/<int:alert_id>/investigate', methods=['POST'])
 def investigate_endpoint(alert_id):
     result = process_alert(alert_id)
@@ -125,7 +181,19 @@ def get_report(alert_id):
         return jsonify({"error": "Report not found"}), 404
         
     report_dict = dict(report)
-    report_dict['recommended_action'] = json.loads(report_dict['recommended_action'])
+    
+    # If we have the full original LLM JSON, merge it in so the UI has all fields
+    if report_dict.get('full_json'):
+        try:
+            full_data = json.loads(report_dict['full_json'])
+            # Don't overwrite the primary keys
+            for k, v in full_data.items():
+                if k not in report_dict:
+                    report_dict[k] = v
+        except json.JSONDecodeError:
+            pass
+            
+    report_dict['recommended_action'] = json.loads(report_dict.get('recommended_action', '[]'))
     return jsonify({"report": report_dict})
 
 @app.route('/alerts/<int:alert_id>/feedback', methods=['POST'])
@@ -193,48 +261,69 @@ def ml_sniff():
         if "error" in sniff_result:
             return jsonify(sniff_result), 400
             
-        packet_features = sniff_result["packet"]
-        prediction = predict_threat(packet_features)
+        packets = sniff_result["packets"]
+        all_predictions = []
+        total_throughput = 0
         
-        # Check if threat is detected and create alert
-        attack_type = prediction.get("predicted_class", "Benign")
-        
-        severity = "LOW"
-        action = "No action required. Normal traffic."
-        
-        if attack_type == "PortScan":
-            severity = "MEDIUM"
-            action = "Rate-limit IP and monitor for further suspicious requests."
-        elif attack_type in ["Bot", "DDoS"]:
-            severity = "HIGH"
-            action = "Immediately block Source IP and activate DDoS mitigation protocols."
-        elif attack_type == "Brute Force":
-            severity = "HIGH"
-            action = "Block IP at Firewall and investigate payload."
+        for packet_features in packets:
+            prediction = predict_threat(packet_features)
+            attack_type = prediction.get("predicted_class", "Benign")
             
-        evidence = {
-            "reason": f"Live Network Sniffer analyzed packet: {attack_type}.",
-            "packet_features": packet_features,
-            "confidence": prediction.get("confidence_score"),
-            "Description": f"Live Sniffer analyzed {attack_type} packet.",
-            "Recommended Action": action
-        }
-        
-        src_ip = packet_features.get("Source IP", "Unknown")
-        alert_id = create_alert(
-            alert_type=attack_type,
-            severity=severity,
-            source_ip=src_ip,
-            evidence=evidence
-        )
-        prediction["alert_created"] = (alert_id is not None)
-        prediction["alert_id"] = alert_id
-        
-        # Merge the raw_summary into the response
-        prediction["raw_summary"] = sniff_result.get("raw_summary", "")
-        prediction["packet"] = packet_features
-        
-        return jsonify(prediction), 200
+            severity = "LOW"
+            action = "No action required. Normal traffic."
+            
+            if attack_type == "PortScan":
+                # FILTER FALSE POSITIVES: The RF model commonly flags single short flows as PortScans.
+                # If it targets common background ports (like 443, 80, 53) or local ephemeral ports (like UDP mDNS), override it.
+                dest_port = int(packet_features.get("Destination Port", 0))
+                proto = int(packet_features.get("Protocol", 6))
+                if dest_port in [443, 80, 53, 5353] or (proto == 17 and dest_port > 1024):
+                    attack_type = "Benign"
+                else:
+                    severity = "MEDIUM"
+                    action = "Rate-limit IP and monitor for further suspicious requests."
+                    
+            elif attack_type in ["Bot", "DDoS"]:
+                severity = "HIGH"
+                action = "Immediately block Source IP and activate DDoS mitigation protocols."
+            elif attack_type == "Brute Force":
+                severity = "HIGH"
+                action = "Block IP at Firewall and investigate payload."
+                
+            prediction["predicted_class"] = attack_type
+                
+            dest_ip = packet_features.get("Destination IP", "Unknown")
+            dest_port = packet_features.get("Destination Port", "Unknown")
+            
+            evidence = {
+                "reason": f"Live Network Sniffer analyzed packet: {attack_type}.",
+                "Target": f"{dest_ip}:{dest_port}",
+                "packet_features": packet_features,
+                "confidence": prediction.get("confidence_score"),
+                "Description": f"Live Sniffer analyzed {attack_type} packet.",
+                "Recommended Action": action
+            }
+            
+            src_ip = packet_features.get("Source IP", "Unknown")
+            alert_id = create_alert(
+                alert_type=attack_type,
+                severity=severity,
+                source_ip=src_ip,
+                evidence=evidence
+            )
+            prediction["alert_created"] = (alert_id is not None)
+            prediction["alert_id"] = alert_id
+            prediction["packet"] = packet_features
+            
+            all_predictions.append(prediction)
+            total_throughput += packet_features.get("Flow Bytes/s", 0)
+            
+        return jsonify({
+            "status": "success",
+            "predictions": all_predictions,
+            "raw_summary": sniff_result.get("raw_summary", ""),
+            "total_throughput": total_throughput
+        }), 200
     except Exception as e:
         return jsonify({"error": f"Sniffing error: {str(e)}", "status": "failed"}), 500
 
@@ -253,6 +342,7 @@ def ml_simulate():
         # Hardcoded PortScan signature
         packet_features = {
             "Source IP": simulated_ip,
+            "Destination IP": "10.0.0.5",
             "Flow Duration": 5, 
             "Total Fwd Packets": 1,
             "Total Backward Packets": 0,
@@ -280,8 +370,12 @@ def ml_simulate():
             severity = "HIGH"
             action = "Block IP at Firewall and investigate payload."
             
+        dest_ip = packet_features.get("Destination IP", "Unknown")
+        dest_port = packet_features.get("Destination Port", "Unknown")
+        
         evidence = {
             "reason": f"Simulated {attack_type} packet anomaly.",
+            "Target": f"{dest_ip}:{dest_port}",
             "packet_features": packet_features,
             "confidence": prediction.get("confidence_score"),
             "Description": f"Simulated {attack_type} attack.",
